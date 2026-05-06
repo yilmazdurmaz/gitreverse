@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Navbar } from "@/components/navbar";
 
 type PromptEntry = {
   id: number;
@@ -117,34 +118,7 @@ export function LibraryPage({ initialData, initialTotal }: LibraryPageProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF8] text-zinc-900">
-      {/* Nav */}
-      <nav className="sticky top-0 z-50 border-b-[3px] border-zinc-900 bg-[#FFFDF8]">
-        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
-          <Link
-            href="/"
-            className="text-xl font-bold tracking-tight hover:opacity-80 transition-opacity"
-          >
-            <span className="text-zinc-900">Git</span>
-            <span className="text-[#d31611]">Reverse</span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/history"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              History
-            </Link>
-            <a
-              href="https://github.com/filiksyos/gitreverse"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-12 sm:px-6">
         {/* Hero */}

@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { Navbar } from "@/components/navbar";
 import { ReverseGenerationFlavorText } from "@/components/reverse-generation-flavor-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { HOME_EXAMPLES } from "@/lib/home-example-repos";
 import { parseGitHubRepoInput } from "@/lib/parse-github-repo";
+import {
+  beginStripeCheckout,
+  PAYMENT_LINK,
+} from "@/lib/stripe-checkout-navigate";
 import { SUBSCRIBER_EMAIL_HEADER } from "@/lib/subscriber-constants";
 
 const GITREVERSE_HISTORY_KEY = "gitreverse_history";
@@ -47,8 +52,6 @@ function clearPendingAuth(): void {
   }
 }
 
-type CheckoutNavigationState = "started" | "left";
-
 const CHECKOUT_ABANDONMENT_OPTIONS = [
   { value: "too_expensive", label: "Too expensive" },
   { value: "not_ready_yet", label: "Not ready yet" },
@@ -59,15 +62,6 @@ const CHECKOUT_ABANDONMENT_OPTIONS = [
 type CheckoutAbandonmentReason =
   (typeof CHECKOUT_ABANDONMENT_OPTIONS)[number]["value"];
 
-function setCheckoutNavigationState(state: CheckoutNavigationState): void {
-  if (typeof window === "undefined") return;
-  try {
-    sessionStorage.setItem(CHECKOUT_NAVIGATION_STATE_KEY, state);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
 function clearCheckoutNavigationState(): void {
   if (typeof window === "undefined") return;
   try {
@@ -76,20 +70,6 @@ function clearCheckoutNavigationState(): void {
     /* storage unavailable */
   }
 }
-
-function savePendingRedirect(): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(PENDING_REDIRECT_KEY, window.location.pathname);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-const PAYMENT_LINK =
-  (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK?.trim()) ||
-  "";
 
 type RLEntry = { count: number; date: string };
 
@@ -965,40 +945,10 @@ export function ReversePromptHome({
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF8] text-zinc-900">
-      <nav className="sticky top-0 z-50 border-b-[3px] border-zinc-900 bg-[#FFFDF8]">
-        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
-          <Link
-            href="/"
-            className="text-xl font-bold tracking-tight transition-transform hover:-translate-y-0.5"
-            aria-label="GitReverse home"
-          >
-            <span className="text-zinc-900">Git</span>
-            <span className="text-[#d31611]">Reverse</span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/library"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              Library
-            </Link>
-            <Link
-              href="/history"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              History
-            </Link>
-            <a
-              href="https://github.com/filiksyos/gitreverse"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </nav>
+      <Navbar
+        isSubscriber={isSubscriber}
+        onUpgrade={() => void beginStripeCheckout()}
+      />
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center gap-12 px-4 py-12 sm:px-6">
         {checkoutVerifyState === "verifying" ? (
@@ -1210,27 +1160,7 @@ export function ReversePromptHome({
                       {PAYMENT_LINK ? (
                         <button
                           type="button"
-                          onClick={async () => {
-                            savePendingRedirect();
-                            try {
-                              const res = await fetch("/api/create-checkout", {
-                                method: "POST",
-                              });
-                              const data = (await res.json()) as {
-                                url?: string;
-                              };
-                              if (!res.ok || !data.url) {
-                                throw new Error("checkout_unavailable");
-                              }
-                              setCheckoutNavigationState("started");
-                              window.location.href = data.url;
-                            } catch {
-                              if (PAYMENT_LINK) {
-                                setCheckoutNavigationState("started");
-                                window.location.href = PAYMENT_LINK;
-                              }
-                            }
-                          }}
+                          onClick={() => void beginStripeCheckout()}
                           className="inline-flex items-center justify-center rounded border-[2px] border-zinc-900 bg-[#ffc480] px-3 py-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-[#ffbd5c]"
                         >
                           Get Unlimited
@@ -1403,7 +1333,27 @@ export function ReversePromptHome({
       </main>
 
       <footer className="border-t border-zinc-200 py-6 text-center text-sm text-zinc-500">
-        <div className="mx-auto flex max-w-4xl justify-center px-4 sm:px-6">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-2 px-4 sm:px-6">
+          <a
+            href="https://github.com/filiksyos/gitreverse"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 font-medium text-zinc-700 underline decoration-zinc-400 underline-offset-2 transition-colors hover:text-zinc-900"
+          >
+            <svg
+              className="h-4 w-4 shrink-0"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+            </svg>
+            GitHub
+          </a>
+          <span className="text-zinc-300" aria-hidden>
+            ·
+          </span>
           <a
             href="https://discord.gg/Uq7fTGsQX"
             target="_blank"

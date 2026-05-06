@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Navbar } from "@/components/navbar";
 
 const HISTORY_KEY = "gitreverse_history";
 
@@ -104,33 +105,7 @@ export function HistoryPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF8] text-zinc-900">
-      <nav className="sticky top-0 z-50 border-b-[3px] border-zinc-900 bg-[#FFFDF8]">
-        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
-          <Link
-            href="/"
-            className="text-xl font-bold tracking-tight transition-opacity hover:opacity-80"
-          >
-            <span className="text-zinc-900">Git</span>
-            <span className="text-[#d31611]">Reverse</span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/library"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              Library
-            </Link>
-            <a
-              href="https://github.com/filiksyos/gitreverse"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-zinc-900 transition-transform hover:-translate-y-0.5"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-12 sm:px-6">
         <div className="flex flex-col gap-2 text-center sm:text-left">
