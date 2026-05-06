@@ -1,12 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Navbar } from "@/components/navbar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,22 +26,6 @@ function IconCheck({ size = 16 }: { size?: number }) {
   );
 }
 
-function FaqCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="relative isolate">
-      <div
-        className="pointer-events-none absolute inset-0 rounded-lg bg-zinc-900"
-        style={{ transform: "translate(5px,5px)" }}
-        aria-hidden
-      />
-      <div className="relative rounded-lg border-2 border-zinc-900 bg-white p-5">
-        <h3 className="m-0 mb-2 text-[15px] font-bold text-zinc-900">{title}</h3>
-        <p className="m-0 text-sm leading-relaxed text-zinc-600">{children}</p>
-      </div>
-    </div>
-  );
-}
-
 type FeatureRowProps = {
   title: string;
   description: string;
@@ -55,13 +33,13 @@ type FeatureRowProps = {
 
 function FeatureRow({ title, description }: FeatureRowProps) {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-2.5">
       <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
-        <IconCheck size={16} />
+        <IconCheck size={14} />
       </div>
       <div>
-        <div className="text-[15px] font-bold text-zinc-900">{title}</div>
-        <p className="mt-0.5 text-[13px] leading-snug text-zinc-500">{description}</p>
+        <div className="text-sm font-bold text-zinc-900">{title}</div>
+        <p className="mt-0 text-xs leading-snug text-zinc-500">{description}</p>
       </div>
     </div>
   );
@@ -142,38 +120,32 @@ export function PremiumPage() {
       <Navbar />
 
       {/* Hero */}
-      <div className="mx-auto max-w-4xl px-6 pb-8 pt-12 text-center sm:px-8 sm:pt-16 md:pb-12">
-        <h1 className="m-0 text-[clamp(2.125rem,6.5vw,3.75rem)] font-extrabold leading-none tracking-tight text-zinc-900">
-          Steal more.
-          <br />
-          Build faster.
+      <div className="mx-auto flex max-w-4xl flex-col items-center px-6 pb-3 pt-12 text-center sm:px-8 sm:pt-16 md:pb-4">
+        <h1 className="m-0 max-w-[100%] text-center text-[clamp(0.9375rem,calc(0.65rem+3.85vw),3.75rem)] font-extrabold leading-none tracking-tight text-zinc-900 whitespace-nowrap">
+          Steal more. Build faster.
         </h1>
-        <p className="mx-auto mb-8 mt-4 max-w-[520px] text-lg text-zinc-600">
-          Unlock unlimited deep analysis, manual control, and more to reverse engineer
-          any codebase.
-        </p>
       </div>
 
       {/* Pricing card */}
-      <div className="mx-auto max-w-[520px] px-6 pb-12 sm:px-8">
+      <div className="mx-auto max-w-[440px] px-6 pb-12 sm:px-8">
         <div className="relative isolate">
           <div
-            className="pointer-events-none absolute inset-0 rounded-xl bg-zinc-900"
-            style={{ transform: "translate(8px,8px)" }}
+            className="pointer-events-none absolute inset-0 rounded-lg bg-zinc-900"
+            style={{ transform: "translate(5px,5px)" }}
             aria-hidden
           />
-          <div className="relative flex flex-col gap-6 rounded-xl border-[3px] border-zinc-900 bg-[#fff4da] p-8">
+          <div className="relative flex flex-col gap-3.5 rounded-lg border-[2.5px] border-zinc-900 bg-[#fff4da] p-5 sm:p-6">
             <div>
-              <div className="mb-2 text-sm font-semibold tracking-wide text-zinc-600">
+              <div className="mb-1 text-xs font-semibold tracking-wide text-zinc-600">
                 MONTHLY PLAN
               </div>
-              <div className="text-5xl font-extrabold tracking-tight sm:text-[48px]">
+              <div className="text-4xl font-extrabold tracking-tight sm:text-[2.5rem]">
                 $9
-                <span className="text-xl font-semibold text-zinc-500">/mo</span>
+                <span className="text-base font-semibold text-zinc-500 sm:text-lg">/mo</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3.5 border-y-2 border-zinc-900 py-6">
+            <div className="flex flex-col gap-2 border-y border-zinc-900 py-3.5">
               <FeatureRow
                 title="Unlimited deep reverse"
                 description="Analyze projects of any size, no limits on request depth or complexity."
@@ -192,14 +164,14 @@ export function PremiumPage() {
               <span className="relative isolate block">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-md bg-zinc-900"
-                  style={{ transform: "translate(4px,4px)" }}
+                  style={{ transform: "translate(3px,3px)" }}
                   aria-hidden
                 />
                 <button
                   type="button"
                   disabled={ctaDisabled}
                   onClick={() => void handleSubscribe()}
-                  className="relative z-10 w-full cursor-pointer rounded-md border-[3px] border-zinc-900 bg-[#d31611] px-6 py-3.5 font-bold text-white transition-transform duration-100 enabled:hover:-translate-x-px enabled:hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
+                  className="relative z-10 w-full cursor-pointer rounded-md border-[2.5px] border-zinc-900 bg-[#d31611] px-4 py-2.5 text-sm font-bold text-white transition-transform duration-100 enabled:hover:-translate-x-px enabled:hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-base"
                 >
                   {ctaLabel}
                 </button>
@@ -212,39 +184,6 @@ export function PremiumPage() {
           </div>
         </div>
       </div>
-
-      {/* FAQ */}
-      <div className="mx-auto max-w-[672px] px-6 pb-16 pt-8 sm:px-8 md:px-12">
-        <h2 className="m-0 mb-8 text-center text-[28px] font-extrabold tracking-tight sm:text-[32px]">
-          Questions?
-        </h2>
-        <div className="flex flex-col gap-4">
-          <FaqCard title="Can I cancel anytime?">
-            Yes. Cancel your subscription at any time, no questions asked. You&apos;ll
-            keep access through the end of your billing period.
-          </FaqCard>
-          <FaqCard title="Is there a free trial?">
-            Yes — sign in with GitHub and get 5 free deep reverses every month. No credit
-            card needed.
-          </FaqCard>
-          <FaqCard title="What payment methods do you accept?">
-            We accept all major credit cards through Stripe. More payment methods coming
-            soon.
-          </FaqCard>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <footer className="mt-12 border-t border-zinc-200 px-6 py-6 text-center text-sm text-zinc-500">
-        <Link
-          href="https://discord.gg/Uq7fTGsQX"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-zinc-700 underline decoration-zinc-400 underline-offset-2 hover:text-zinc-900"
-        >
-          Discord
-        </Link>
-      </footer>
 
       <AuthModal isOpen={showAuthModal} onClose={handleAuthModalClose} />
     </div>
