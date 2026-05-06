@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import { AuthModal } from "@/components/auth/AuthModal";
 import { ReverseGenerationFlavorText } from "@/components/reverse-generation-flavor-text";
+import { useAuth } from "@/contexts/AuthContext";
 import { HOME_EXAMPLES } from "@/lib/home-example-repos";
 import { parseGitHubRepoInput } from "@/lib/parse-github-repo";
 import { SUBSCRIBER_EMAIL_HEADER } from "@/lib/subscriber-constants";
@@ -20,6 +22,30 @@ const SUBSCRIBER_EMAIL_KEY = "gr_subscriber_email";
 const PENDING_REDIRECT_KEY = "gr_pending_redirect";
 const CHECKOUT_NAVIGATION_STATE_KEY = "gr_checkout_navigation_state";
 const CHECKOUT_RETURNED_STATE = "returned";
+
+const PENDING_AUTH_KEY = "gr_pending_auth_action";
+
+type PendingAuthAction =
+  | { type: "deep"; repoUrl: string }
+  | { type: "manual"; repoUrl: string; focus: string };
+
+function savePendingAuth(action: PendingAuthAction): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(PENDING_AUTH_KEY, JSON.stringify(action));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function clearPendingAuth(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(PENDING_AUTH_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 type CheckoutNavigationState = "started" | "left";
 
@@ -175,6 +201,19 @@ export function ReversePromptHome({
   isHome = false,
 }: ReversePromptHomeProps) {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  const openAuthModalWithPending = useCallback((action: PendingAuthAction) => {
+    savePendingAuth(action);
+    setShowAuthModal(true);
+  }, []);
+
+  const closeAuthModal = useCallback(() => {
+    clearPendingAuth();
+    setShowAuthModal(false);
+  }, []);
+
   const initialFocus =
     autoSubmitDeep
       ? ""
@@ -332,6 +371,13 @@ export function ReversePromptHome({
       cancelled = true;
     };
   }, [router]);
+
+  /** Close auth modal after successful sign-in (popup flow). */
+  useEffect(() => {
+    if (isAuthenticated && showAuthModal) {
+      setShowAuthModal(false);
+    }
+  }, [isAuthenticated, showAuthModal]);
 
   const runReversePrompt = useCallback(async (input: string) => {
     setError(null);
@@ -616,6 +662,56 @@ export function ReversePromptHome({
     [preserveUrl, isSubscriber, subscriberEmail]
   );
 
+  const startDeepReverse = useCallback(() => {
+    if (loading) return;
+    const input = repoUrl.trim();
+    const parsed = parseGitHubRepoInput(input);
+    if (!parsed) return;
+    if (!isAuthenticated) {
+      openAuthModalWithPending({ type: "deep", repoUrl: input });
+      return;
+    }
+    if (!initialRepoInput?.trim()) {
+      void router.push(
+        `/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/deep`
+      );
+    } else {
+      void runCustomReverse(input, { mode: "deep" });
+    }
+  }, [
+    loading,
+    repoUrl,
+    isAuthenticated,
+    initialRepoInput,
+    router,
+    runCustomReverse,
+    openAuthModalWithPending,
+  ]);
+
+  /** Resume Deep / Manual after GitHub popup sign-in (sessionStorage). */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem(PENDING_AUTH_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PENDING_AUTH_KEY);
+    } catch {
+      return;
+    }
+    let action: PendingAuthAction;
+    try {
+      action = JSON.parse(raw) as PendingAuthAction;
+    } catch {
+      return;
+    }
+    if (action.type === "deep") {
+      void runCustomReverse(action.repoUrl, { mode: "deep" });
+    } else if (action.type === "manual") {
+      void runCustomReverse(action.repoUrl, action.focus);
+    }
+  }, [isAuthenticated, runCustomReverse]);
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
@@ -626,6 +722,14 @@ export function ReversePromptHome({
       if (!parsed) return;
       if (customReverse) {
         const focus = customPrompt.trim();
+        if (!isAuthenticated) {
+          openAuthModalWithPending({
+            type: "manual",
+            repoUrl: trimmed,
+            focus,
+          });
+          return;
+        }
         void router.push(
           focus
             ? `/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/${encodeURIComponent(focus)}`
@@ -641,6 +745,14 @@ export function ReversePromptHome({
 
     if (customReverse) {
       const focus = customPrompt.trim();
+      if (!isAuthenticated) {
+        openAuthModalWithPending({
+          type: "manual",
+          repoUrl: trimmed,
+          focus,
+        });
+        return;
+      }
       const parsed = parseGitHubRepoInput(trimmed);
       if (parsed && typeof window !== "undefined") {
         window.history.pushState(
@@ -668,12 +780,20 @@ export function ReversePromptHome({
     if (!trimmed || !parseGitHubRepoInput(trimmed)) return;
 
     if (autoSubmitDeep) {
+      if (!isAuthenticated) {
+        setShowAuthModal(true);
+        return;
+      }
       autoSubmitStartedRef.current = true;
       void runCustomReverse(trimmed, { mode: "deep" });
       return;
     }
     const focus = autoSubmitFocus?.trim() ?? "";
     if (focus) {
+      if (!isAuthenticated) {
+        setShowAuthModal(true);
+        return;
+      }
       autoSubmitStartedRef.current = true;
       void runCustomReverse(trimmed, focus);
       return;
@@ -690,6 +810,7 @@ export function ReversePromptHome({
     initialRepoInput,
     runCustomReverse,
     runReversePrompt,
+    isAuthenticated,
   ]);
 
   /* `/owner/repo` uses quick auto-submit; `/owner/repo/deep` and `/owner/repo/<focus>` use the branches above. */
@@ -1264,26 +1385,12 @@ export function ReversePromptHome({
                     tabIndex={0}
                     className="cursor-pointer font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2 transition-colors hover:text-zinc-950"
                     onClick={() => {
-                      const parsed = parseGitHubRepoInput(repoUrl.trim());
-                      if (!initialRepoInput?.trim() && parsed) {
-                        void router.push(
-                          `/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/deep`
-                        );
-                      } else {
-                        void runCustomReverse(repoUrl.trim(), { mode: "deep" });
-                      }
+                      startDeepReverse();
                     }}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter" && e.key !== " ") return;
                       e.preventDefault();
-                      const parsed = parseGitHubRepoInput(repoUrl.trim());
-                      if (!initialRepoInput?.trim() && parsed) {
-                        void router.push(
-                          `/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/deep`
-                        );
-                      } else {
-                        void runCustomReverse(repoUrl.trim(), { mode: "deep" });
-                      }
+                      startDeepReverse();
                     }}
                   >
                     Deep Reverse
@@ -1316,6 +1423,8 @@ export function ReversePromptHome({
           </a>
         </div>
       </footer>
+
+      <AuthModal isOpen={showAuthModal} onClose={closeAuthModal} />
 
       {showAbandonmentSurvey ? (
         <div
