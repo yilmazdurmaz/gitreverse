@@ -20,9 +20,8 @@ const GITREVERSE_HISTORY_KEY = "gitreverse_history";
 const GITREVERSE_HISTORY_MAX = 20;
 const HISTORY_PROMPT_PREVIEW_LEN = 160;
 
-const RL_KEY_DEEP = "gr_rl_deep";
-const RL_KEY_MANUAL = "gr_rl_manual";
-const DAILY_CUSTOM_LIMIT = 3;
+const RL_KEY_MONTHLY = "gr_rl_monthly";
+const MONTHLY_CUSTOM_LIMIT = 3;
 const SUBSCRIBER_EMAIL_KEY = "gr_subscriber_email";
 const PENDING_REDIRECT_KEY = "gr_pending_redirect";
 const CHECKOUT_NAVIGATION_STATE_KEY = "gr_checkout_navigation_state";
@@ -73,20 +72,21 @@ function clearCheckoutNavigationState(): void {
 
 type RLEntry = { count: number; date: string };
 
-function getTodayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Calendar month key for combined deep+manual quota (UTC `YYYY-MM`). */
+function getMonthStr(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 function getRLEntry(key: string): RLEntry {
   if (typeof window === "undefined")
-    return { count: 0, date: getTodayStr() };
+    return { count: 0, date: getMonthStr() };
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return { count: 0, date: getTodayStr() };
+    if (!raw) return { count: 0, date: getMonthStr() };
     const e = JSON.parse(raw) as RLEntry;
-    return e.date === getTodayStr() ? e : { count: 0, date: getTodayStr() };
+    return e.date === getMonthStr() ? e : { count: 0, date: getMonthStr() };
   } catch {
-    return { count: 0, date: getTodayStr() };
+    return { count: 0, date: getMonthStr() };
   }
 }
 
@@ -181,7 +181,7 @@ export function ReversePromptHome({
   isHome = false,
 }: ReversePromptHomeProps) {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const openAuthModalWithPending = useCallback((action: PendingAuthAction) => {
@@ -206,9 +206,7 @@ export function ReversePromptHome({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
-  const [dailyLimitReached, setDailyLimitReached] = useState<
-    "deep" | "manual" | null
-  >(null);
+  const [monthlyLimitReached, setMonthlyLimitReached] = useState(false);
   const [subscriberEmail, setSubscriberEmail] = useState<string | null>(null);
   const [isSubscriber, setIsSubscriber] = useState(false);
   const [subscriberHydrated, setSubscriberHydrated] = useState(false);
@@ -301,7 +299,7 @@ export function ReversePromptHome({
             localStorage.setItem(SUBSCRIBER_EMAIL_KEY, data.email);
             setSubscriberEmail(data.email);
             setIsSubscriber(true);
-            setDailyLimitReached(null);
+            setMonthlyLimitReached(false);
             setCheckoutVerifyState("idle");
             const pendingRedirect = localStorage.getItem(PENDING_REDIRECT_KEY);
             localStorage.removeItem(PENDING_REDIRECT_KEY);
@@ -412,18 +410,17 @@ export function ReversePromptHome({
     async (input: string, focusOrDeep: string | { mode: "deep" }) => {
       setError(null);
       setRateLimited(false);
-      setDailyLimitReached(null);
+      setMonthlyLimitReached(false);
       setPrompt("");
       setCopied(false);
       const isDeep =
         typeof focusOrDeep === "object" && focusOrDeep.mode === "deep";
-      const rlKey = isDeep ? RL_KEY_DEEP : RL_KEY_MANUAL;
-      const bypassDaily = Boolean(isSubscriber && subscriberEmail?.trim());
+      const bypassQuota = Boolean(isSubscriber && subscriberEmail?.trim());
       if (
-        !bypassDaily &&
-        getRLEntry(rlKey).count >= DAILY_CUSTOM_LIMIT
+        !bypassQuota &&
+        getRLEntry(RL_KEY_MONTHLY).count >= MONTHLY_CUSTOM_LIMIT
       ) {
-        setDailyLimitReached(isDeep ? "deep" : "manual");
+        setMonthlyLimitReached(true);
         return;
       }
       setManualStatusLine("Checking if it's cached…");
@@ -442,6 +439,9 @@ export function ReversePromptHome({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
             ...(subscriberEmail
               ? { [SUBSCRIBER_EMAIL_HEADER]: subscriberEmail }
               : {}),
@@ -459,17 +459,20 @@ export function ReversePromptHome({
           };
           if (!res.ok) {
             if (res.status === 429) {
-              if (data.error === "daily_limit_reached") {
+              const limitErr =
+                data.error === "monthly_limit_reached" ||
+                data.error === "daily_limit_reached";
+              if (limitErr) {
                 if (typeof window !== "undefined") {
                   localStorage.setItem(
-                    rlKey,
+                    RL_KEY_MONTHLY,
                     JSON.stringify({
-                      count: DAILY_CUSTOM_LIMIT,
-                      date: getTodayStr(),
+                      count: MONTHLY_CUSTOM_LIMIT,
+                      date: getMonthStr(),
                     })
                   );
                 }
-                setDailyLimitReached(isDeep ? "deep" : "manual");
+                setMonthlyLimitReached(true);
               } else {
                 setRateLimited(true);
               }
@@ -482,8 +485,8 @@ export function ReversePromptHome({
             if (data.fromCache) {
               setManualStatusLine("Loaded from cache");
               await new Promise((r) => setTimeout(r, 450));
-            } else if (typeof window !== "undefined" && !bypassDaily) {
-              incrementRLEntry(rlKey);
+            } else if (typeof window !== "undefined" && !bypassQuota) {
+              incrementRLEntry(RL_KEY_MONTHLY);
             }
             setPrompt(data.prompt);
             setLastResultWasCustom(true);
@@ -523,17 +526,20 @@ export function ReversePromptHome({
           try {
             const errData = (await res.json()) as { error?: string };
             if (res.status === 429) {
-              if (errData.error === "daily_limit_reached") {
+              const limitErr =
+                errData.error === "monthly_limit_reached" ||
+                errData.error === "daily_limit_reached";
+              if (limitErr) {
                 if (typeof window !== "undefined") {
                   localStorage.setItem(
-                    rlKey,
+                    RL_KEY_MONTHLY,
                     JSON.stringify({
-                      count: DAILY_CUSTOM_LIMIT,
-                      date: getTodayStr(),
+                      count: MONTHLY_CUSTOM_LIMIT,
+                      date: getMonthStr(),
                     })
                   );
                 }
-                setDailyLimitReached(isDeep ? "deep" : "manual");
+                setMonthlyLimitReached(true);
               } else {
                 setRateLimited(true);
               }
@@ -555,8 +561,8 @@ export function ReversePromptHome({
           return;
         }
 
-        if (typeof window !== "undefined" && !bypassDaily) {
-          incrementRLEntry(rlKey);
+        if (typeof window !== "undefined" && !bypassQuota) {
+          incrementRLEntry(RL_KEY_MONTHLY);
         }
 
         const reader = res.body.getReader();
@@ -639,7 +645,7 @@ export function ReversePromptHome({
         setManualStatusLine("");
       }
     },
-    [preserveUrl, isSubscriber, subscriberEmail]
+    [preserveUrl, isSubscriber, subscriberEmail, session?.access_token]
   );
 
   const startDeepReverse = useCallback(() => {
@@ -987,7 +993,7 @@ export function ReversePromptHome({
                     localStorage.setItem(SUBSCRIBER_EMAIL_KEY, data.email);
                     setSubscriberEmail(data.email);
                     setIsSubscriber(true);
-                    setDailyLimitReached(null);
+                    setMonthlyLimitReached(false);
                     setCheckoutVerifyState("idle");
                     const pendingRedirect = localStorage.getItem(
                       PENDING_REDIRECT_KEY
@@ -1144,14 +1150,14 @@ export function ReversePromptHome({
                 </div>
               ) : null}
 
-              {dailyLimitReached ? (
+              {monthlyLimitReached ? (
                 <div
                   className="mt-4 rounded-lg border-[3px] border-zinc-400 bg-zinc-100 p-4"
                   role="alert"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold text-zinc-900">
-                      You&apos;ve hit today&apos;s limit.
+                      You&apos;ve hit this month&apos;s limit.
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       {PAYMENT_LINK ? (

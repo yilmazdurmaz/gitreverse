@@ -194,7 +194,7 @@ async function executeCustomReverse(opts: {
     }
   }
 
-  const rateLimited = await enforceCustomReverseRateLimit(request, isDeep);
+  const rateLimited = await enforceCustomReverseRateLimit(request);
   if (rateLimited) return rateLimited;
 
   const base = getServiceUrl().replace(/\/$/, "");
@@ -313,7 +313,7 @@ async function executeCustomReverseStream(opts: {
     }
   }
 
-  const rateLimited = await enforceCustomReverseRateLimit(request, isDeep);
+  const rateLimited = await enforceCustomReverseRateLimit(request);
   if (rateLimited) return rateLimited;
 
   const base = getServiceUrl().replace(/\/$/, "");

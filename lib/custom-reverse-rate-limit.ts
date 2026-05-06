@@ -1,16 +1,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
-import { hashVisitorIp } from "@/lib/visitor-ip";
 import { checkActiveSubscriber } from "@/lib/subscriber";
 import { SUBSCRIBER_EMAIL_HEADER } from "@/lib/subscriber-constants";
 
-const DAILY_LIMIT = 3;
+const MONTHLY_LIMIT = 3;
 const RATE_LIMIT_RPC_TIMEOUT_MS = 2500;
 
-export type CustomReverseRateLimitAction = "deep" | "manual";
-
-/** Skip DB-backed daily limits while developing locally or when explicitly opted out. */
+/** Skip DB-backed limits while developing locally or when explicitly opted out. */
 function shouldSkipCustomReverseRateLimit(req: NextRequest): boolean {
   if (process.env.GITREVERSE_SKIP_CUSTOM_REVERSE_RATE_LIMIT === "true") {
     return true;
@@ -24,12 +21,35 @@ function shouldSkipCustomReverseRateLimit(req: NextRequest): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
-/** Enforce daily per-IP limits for non-cached custom reverse. Returns a 429
+function getBearerToken(req: NextRequest): string | null {
+  const auth = req.headers.get("authorization");
+  if (!auth) return null;
+  const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
+  const t = m?.[1]?.trim();
+  return t || null;
+}
+
+/** Read `sub` from Supabase JWT payload (local base64url decode, no network). */
+function extractUserIdFromJwtPayload(token: string): string | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const raw = parts[1];
+    if (!raw) return null;
+    const payload = JSON.parse(
+      Buffer.from(raw, "base64url").toString("utf-8")
+    ) as { sub?: unknown };
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Enforce monthly per-user limits for non-cached custom reverse. Returns a 429
  * response when over limit; returns `null` to continue (including fail-open on
- * timeout/DB errors). */
+ * missing token, timeout/DB errors). */
 export async function enforceCustomReverseRateLimit(
-  req: NextRequest,
-  isDeep: boolean
+  req: NextRequest
 ): Promise<NextResponse | null> {
   if (shouldSkipCustomReverseRateLimit(req)) {
     return null;
@@ -46,14 +66,16 @@ export async function enforceCustomReverseRateLimit(
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const action: CustomReverseRateLimitAction = isDeep ? "deep" : "manual";
-  const ipHash = hashVisitorIp(req);
+  const token = getBearerToken(req);
+  const userId = token ? extractUserIdFromJwtPayload(token) : null;
+  if (!userId) {
+    return null;
+  }
 
   try {
-    const rpcPromise = supabase.rpc("check_and_increment_usage", {
-      p_ip_hash: ipHash ?? "",
-      p_action: action,
-      p_limit: DAILY_LIMIT,
+    const rpcPromise = supabase.rpc("check_and_increment_user_usage", {
+      p_user_id: userId,
+      p_limit: MONTHLY_LIMIT,
     });
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("rl-timeout")), RATE_LIMIT_RPC_TIMEOUT_MS)
@@ -71,8 +93,7 @@ export async function enforceCustomReverseRateLimit(
     if (!allowed) {
       return NextResponse.json(
         {
-          error: "daily_limit_reached",
-          action,
+          error: "monthly_limit_reached",
           remaining: 0,
         },
         { status: 429 }
