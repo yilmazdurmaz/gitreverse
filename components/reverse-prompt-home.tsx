@@ -10,10 +10,7 @@ import { ReverseGenerationFlavorText } from "@/components/reverse-generation-fla
 import { useAuth } from "@/contexts/AuthContext";
 import { HOME_EXAMPLES } from "@/lib/home-example-repos";
 import { parseGitHubRepoInput } from "@/lib/parse-github-repo";
-import {
-  beginStripeCheckout,
-  PAYMENT_LINK,
-} from "@/lib/stripe-checkout-navigate";
+import { PAYMENT_LINK } from "@/lib/stripe-checkout-navigate";
 import { SUBSCRIBER_EMAIL_HEADER } from "@/lib/subscriber-constants";
 
 const GITREVERSE_HISTORY_KEY = "gitreverse_history";
@@ -1161,13 +1158,12 @@ export function ReversePromptHome({
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       {PAYMENT_LINK ? (
-                        <button
-                          type="button"
-                          onClick={() => void beginStripeCheckout()}
+                        <Link
+                          href="/premium"
                           className="inline-flex items-center justify-center rounded border-[2px] border-zinc-900 bg-[#ffc480] px-3 py-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-[#ffbd5c]"
                         >
                           Get Unlimited
-                        </button>
+                        </Link>
                       ) : null}
                       <Link
                         href="/library"
