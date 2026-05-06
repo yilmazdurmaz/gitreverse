@@ -5,7 +5,6 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { AUTH_SKIP, isSupabaseAuthConfigured } from "@/lib/supabase-auth";
-import { beginStripeCheckout, PAYMENT_LINK } from "@/lib/stripe-checkout-navigate";
 import type { User } from "@supabase/supabase-js";
 
 function IconBooks({ className }: { className?: string }) {
@@ -148,7 +147,6 @@ function userInitials(user: User): string {
 
 export type NavbarProps = {
   isSubscriber?: boolean;
-  onUpgrade?: () => void | Promise<void>;
 };
 
 function NavDivider() {
@@ -212,13 +210,7 @@ function IconLinkWithTooltip({
   );
 }
 
-function PremiumButton({
-  isSubscriber,
-  onUpgrade,
-}: {
-  isSubscriber: boolean;
-  onUpgrade?: () => void | Promise<void>;
-}) {
+function PremiumButton({ isSubscriber }: { isSubscriber: boolean }) {
   const [hov, setHov] = useState(false);
   const shadowShift = hov ? "translate(2px,2px)" : "translate(3px,3px)";
   const btnShift = hov ? "-translate-x-px -translate-y-px" : "";
@@ -241,15 +233,6 @@ function PremiumButton({
     );
   }
 
-  if (!PAYMENT_LINK) {
-    return null;
-  }
-
-  const handleClick = async () => {
-    if (onUpgrade) await onUpgrade();
-    else await beginStripeCheckout();
-  };
-
   return (
     <span className="relative isolate inline-flex">
       <span
@@ -257,21 +240,20 @@ function PremiumButton({
         style={{ transform: shadowShift }}
         aria-hidden
       />
-      <button
-        type="button"
-        onClick={() => void handleClick()}
+      <Link
+        href="/premium"
         onMouseEnter={() => setHov(true)}
         onMouseLeave={() => setHov(false)}
         className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-md border-[2.5px] border-zinc-900 bg-[#fff4da] px-3.5 py-1.5 text-sm font-bold text-zinc-900 transition-transform duration-100 ${btnShift}`}
       >
         <IconPremiumBadge size={17} />
         Premium
-      </button>
+      </Link>
     </span>
   );
 }
 
-export function Navbar({ isSubscriber: isSubscriberProp, onUpgrade }: NavbarProps) {
+export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
   const pathname = usePathname();
   const { user, isLoading: authLoading, signInWithGitHub, signOut } = useAuth();
   const authUiEnabled =
@@ -356,10 +338,7 @@ export function Navbar({ isSubscriber: isSubscriberProp, onUpgrade }: NavbarProp
           <NavDivider />
 
           <div className="shrink-0">
-            <PremiumButton
-              isSubscriber={isSubscriber}
-              onUpgrade={onUpgrade}
-            />
+            <PremiumButton isSubscriber={isSubscriber} />
           </div>
 
           <NavDivider />

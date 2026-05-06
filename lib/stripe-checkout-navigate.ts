@@ -1,5 +1,5 @@
 /**
- * Client-side Stripe checkout redirect (shared by home + nav Premium button).
+ * Client-side Stripe checkout redirect (premium page + in-app upgrade CTAs).
  */
 
 const PENDING_REDIRECT_KEY = "gr_pending_redirect";

@@ -945,10 +945,7 @@ export function ReversePromptHome({
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF8] text-zinc-900">
-      <Navbar
-        isSubscriber={isSubscriber}
-        onUpgrade={() => void beginStripeCheckout()}
-      />
+      <Navbar isSubscriber={isSubscriber} />
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center gap-12 px-4 py-12 sm:px-6">
         {checkoutVerifyState === "verifying" ? (
