@@ -18,7 +18,7 @@ const GITREVERSE_HISTORY_MAX = 20;
 const HISTORY_PROMPT_PREVIEW_LEN = 160;
 
 const RL_KEY_MONTHLY = "gr_rl_monthly";
-const MONTHLY_CUSTOM_LIMIT = 3;
+const MONTHLY_CUSTOM_LIMIT = 1;
 const SUBSCRIBER_EMAIL_KEY = "gr_subscriber_email";
 const PENDING_REDIRECT_KEY = "gr_pending_redirect";
 const CHECKOUT_NAVIGATION_STATE_KEY = "gr_checkout_navigation_state";
