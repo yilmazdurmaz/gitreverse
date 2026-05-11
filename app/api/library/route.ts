@@ -17,6 +17,8 @@ function searchWords(raw: string): string[] {
     .filter(Boolean);
 }
 
+type SearchStrategy = "fts-plain" | "fts-or" | "ilike-and" | "ilike-or";
+
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) {
@@ -34,24 +36,40 @@ export async function GET(req: NextRequest) {
 
   const words = searchWords(search);
 
-  const runQuery = (orFallback: boolean) => {
+  const runQuery = (strategy?: SearchStrategy) => {
     let query = supabase
       .from("prompt_cache")
       .select("id, owner, repo, prompt, cached_at, views", { count: "exact" });
 
-    if (words.length > 0) {
-      if (orFallback) {
-        const clauses = words.flatMap((w) => [
-          `owner.ilike.%${w}%`,
-          `repo.ilike.%${w}%`,
-          `prompt.ilike.%${w}%`,
-        ]);
-        query = query.or(clauses.join(","));
-      } else {
-        for (const word of words) {
-          query = query.or(
-            `owner.ilike.%${word}%,repo.ilike.%${word}%,prompt.ilike.%${word}%`
-          );
+    if (words.length > 0 && strategy) {
+      switch (strategy) {
+        case "fts-plain":
+          query = query.textSearch("search_vector", search, {
+            type: "plain",
+            config: "english",
+          });
+          break;
+        case "fts-or":
+          query = query.textSearch("search_vector", words.join(" OR "), {
+            type: "websearch",
+            config: "english",
+          });
+          break;
+        case "ilike-and":
+          for (const word of words) {
+            query = query.or(
+              `owner.ilike.%${word}%,repo.ilike.%${word}%,prompt.ilike.%${word}%`
+            );
+          }
+          break;
+        case "ilike-or": {
+          const clauses = words.flatMap((w) => [
+            `owner.ilike.%${w}%`,
+            `repo.ilike.%${w}%`,
+            `prompt.ilike.%${w}%`,
+          ]);
+          query = query.or(clauses.join(","));
+          break;
         }
       }
     }
@@ -74,23 +92,35 @@ export async function GET(req: NextRequest) {
     return query.range(from, to);
   };
 
-  const strict = await runQuery(false);
-  if (strict.error) {
-    return NextResponse.json({ error: strict.error.message }, { status: 500 });
+  let res = await runQuery(words.length > 0 ? "fts-plain" : undefined);
+
+  if (res.error) {
+    return NextResponse.json({ error: res.error.message }, { status: 500 });
   }
 
-  let data = strict.data;
-  let count = strict.count;
-  const totalStrict = count ?? 0;
-
-  if (totalStrict === 0 && words.length > 1) {
-    const relaxed = await runQuery(true);
-    if (relaxed.error) {
-      return NextResponse.json({ error: relaxed.error.message }, { status: 500 });
+  if ((res.count ?? 0) === 0 && words.length > 1) {
+    res = await runQuery("fts-or");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
     }
-    data = relaxed.data;
-    count = relaxed.count;
   }
 
-  return NextResponse.json({ data: data ?? [], total: count ?? 0 });
+  if ((res.count ?? 0) === 0 && words.length > 0) {
+    res = await runQuery("ilike-and");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
+    }
+  }
+
+  if ((res.count ?? 0) === 0 && words.length > 1) {
+    res = await runQuery("ilike-or");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({
+    data: res.data ?? [],
+    total: res.count ?? 0,
+  });
 }
