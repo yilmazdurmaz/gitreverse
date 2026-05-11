@@ -8,6 +8,17 @@ const LIMIT = 24;
 
 type SortOption = "trending" | "newest" | "oldest";
 
+/** Whitespace-split tokens: AND across tokens; each token may match owner, repo, or prompt. */
+function searchWords(raw: string): string[] {
+  return raw
+    .trim()
+    .split(/\s+/u)
+    .map((w) => w.trim())
+    .filter(Boolean);
+}
+
+type SearchStrategy = "fts-plain" | "fts-or" | "ilike-and" | "ilike-or";
+
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) {
@@ -23,38 +34,93 @@ export async function GET(req: NextRequest) {
   const from = page * limit;
   const to = from + limit - 1;
 
-  let query = supabase
-    .from("prompt_cache")
-    .select("id, owner, repo, prompt, cached_at, views", { count: "exact" });
+  const words = searchWords(search);
 
-  if (search) {
-    query = query.or(
-      `owner.ilike.%${search}%,repo.ilike.%${search}%,prompt.ilike.%${search}%`
-    );
+  const runQuery = (strategy?: SearchStrategy) => {
+    let query = supabase
+      .from("prompt_cache")
+      .select("id, owner, repo, prompt, cached_at, views", { count: "exact" });
+
+    if (words.length > 0 && strategy) {
+      switch (strategy) {
+        case "fts-plain":
+          query = query.textSearch("search_vector", search, {
+            type: "plain",
+            config: "english",
+          });
+          break;
+        case "fts-or":
+          query = query.textSearch("search_vector", words.join(" OR "), {
+            type: "websearch",
+            config: "english",
+          });
+          break;
+        case "ilike-and":
+          for (const word of words) {
+            query = query.or(
+              `owner.ilike.%${word}%,repo.ilike.%${word}%,prompt.ilike.%${word}%`
+            );
+          }
+          break;
+        case "ilike-or": {
+          const clauses = words.flatMap((w) => [
+            `owner.ilike.%${w}%`,
+            `repo.ilike.%${w}%`,
+            `prompt.ilike.%${w}%`,
+          ]);
+          query = query.or(clauses.join(","));
+          break;
+        }
+      }
+    }
+
+    switch (sort) {
+      case "oldest":
+        query = query.order("cached_at", { ascending: true });
+        break;
+      case "newest":
+        query = query.order("cached_at", { ascending: false });
+        break;
+      case "trending":
+      default:
+        query = query
+          .order("views", { ascending: false })
+          .order("cached_at", { ascending: false });
+        break;
+    }
+
+    return query.range(from, to);
+  };
+
+  let res = await runQuery(words.length > 0 ? "fts-plain" : undefined);
+
+  if (res.error) {
+    return NextResponse.json({ error: res.error.message }, { status: 500 });
   }
 
-  switch (sort) {
-    case "oldest":
-      query = query.order("cached_at", { ascending: true });
-      break;
-    case "newest":
-      query = query.order("cached_at", { ascending: false });
-      break;
-    case "trending":
-    default:
-      query = query
-        .order("views", { ascending: false })
-        .order("cached_at", { ascending: false });
-      break;
+  if ((res.count ?? 0) === 0 && words.length > 1) {
+    res = await runQuery("fts-or");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
+    }
   }
 
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if ((res.count ?? 0) === 0 && words.length > 0) {
+    res = await runQuery("ilike-and");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
+    }
   }
 
-  return NextResponse.json({ data: data ?? [], total: count ?? 0 });
+  if ((res.count ?? 0) === 0 && words.length > 1) {
+    res = await runQuery("ilike-or");
+    if (res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({
+    data: res.data ?? [],
+    total: res.count ?? 0,
+  });
 }
