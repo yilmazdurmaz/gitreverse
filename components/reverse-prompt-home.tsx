@@ -1354,7 +1354,7 @@ export function ReversePromptHome({
             ·
           </span>
           <a
-            href="https://discord.gg/Uq7fTGsQX"
+            href="https://discord.gg/bhEMbZMHS"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 font-medium text-zinc-700 underline decoration-zinc-400 underline-offset-2 transition-colors hover:text-zinc-900"
