@@ -7,38 +7,147 @@ import { getSupabase } from "@/lib/supabase";
 
 const README_MAX_CHARS = 8000;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const XAI_URL = "https://api.x.ai/v1/chat/completions";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const GOOGLE_AI_STUDIO_URL =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
-type LlmTarget =
-  | { provider: "openrouter"; url: string; apiKey: string; model: string }
-  | { provider: "google"; url: string; apiKey: string; model: string };
+type LlmProvider = "openrouter" | "grok" | "openai" | "google";
 
-function resolveLlmTarget(): LlmTarget | { error: string } {
-  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (openRouterKey) {
-    return {
-      provider: "openrouter",
-      url: OPENROUTER_URL,
-      apiKey: openRouterKey,
-      model:
-        process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-pro",
-    };
+type LlmTarget = {
+  provider: LlmProvider;
+  url: string;
+  apiKey: string;
+  model: string;
+};
+
+function providerDisplayName(p: LlmProvider): string {
+  switch (p) {
+    case "openrouter":
+      return "OpenRouter";
+    case "grok":
+      return "xAI Grok";
+    case "openai":
+      return "OpenAI";
+    case "google":
+      return "Google AI Studio";
+    default: {
+      const _exhaustive: never = p;
+      return _exhaustive;
+    }
   }
-  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
-  if (googleKey) {
-    return {
-      provider: "google",
-      url: GOOGLE_AI_STUDIO_URL,
-      apiKey: googleKey,
-      model:
-        process.env.GOOGLE_AI_STUDIO_MODEL?.trim() || "gemini-2.5-pro",
-    };
-  }
+}
+
+function grokTargetFromApiKey(apiKey: string): LlmTarget {
+  return {
+    provider: "grok",
+    url: XAI_URL,
+    apiKey,
+    model: process.env.XAI_MODEL?.trim() || "grok-3",
+  };
+}
+
+function openRouterTargetFromApiKey(apiKey: string): LlmTarget {
+  return {
+    provider: "openrouter",
+    url: OPENROUTER_URL,
+    apiKey,
+    model: process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-pro",
+  };
+}
+
+function openAiTargetFromApiKey(apiKey: string): LlmTarget {
+  return {
+    provider: "openai",
+    url: OPENAI_URL,
+    apiKey,
+    model: process.env.OPENAI_MODEL?.trim() || "gpt-4.1",
+  };
+}
+
+function googleTargetFromApiKey(apiKey: string): LlmTarget {
+  return {
+    provider: "google",
+    url: GOOGLE_AI_STUDIO_URL,
+    apiKey,
+    model: process.env.GOOGLE_AI_STUDIO_MODEL?.trim() || "gemini-2.5-pro",
+  };
+}
+
+/** When unset or `auto`, first configured key wins in this order. */
+function resolveLlmTargetAuto(
+  xaiKey: string | undefined,
+  openRouterKey: string | undefined,
+  openAiKey: string | undefined,
+  googleKey: string | undefined
+): LlmTarget | { error: string } {
+  if (xaiKey) return grokTargetFromApiKey(xaiKey);
+  if (openRouterKey) return openRouterTargetFromApiKey(openRouterKey);
+  if (openAiKey) return openAiTargetFromApiKey(openAiKey);
+  if (googleKey) return googleTargetFromApiKey(googleKey);
   return {
     error:
-      "No LLM API key configured. Set OPENROUTER_API_KEY (recommended) or GOOGLE_GENERATIVE_AI_API_KEY in .env.local.",
+      "No LLM API key configured. Set GITREVERSE_QUICK_LLM and the matching key(s), or leave GITREVERSE_QUICK_LLM unset (auto) and set one of: XAI_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY.",
   };
+}
+
+function resolveLlmTarget(): LlmTarget | { error: string } {
+  const modeRaw = process.env.GITREVERSE_QUICK_LLM?.trim().toLowerCase() ?? "";
+  const mode = modeRaw === "" ? "auto" : modeRaw;
+
+  const xaiKey = process.env.XAI_API_KEY?.trim();
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  const openAiKey = process.env.OPENAI_API_KEY?.trim();
+  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+
+  if (mode === "auto") {
+    return resolveLlmTargetAuto(xaiKey, openRouterKey, openAiKey, googleKey);
+  }
+
+  const valid = new Set(["grok", "openrouter", "openai", "google"]);
+  if (!valid.has(mode)) {
+    return {
+      error:
+        "Invalid GITREVERSE_QUICK_LLM. Use grok, openrouter, openai, google, or auto.",
+    };
+  }
+
+  const explicitMode = mode as LlmProvider;
+
+  switch (explicitMode) {
+    case "grok":
+      if (!xaiKey) {
+        return {
+          error:
+            "GITREVERSE_QUICK_LLM=grok requires XAI_API_KEY in .env.local.",
+        };
+      }
+      return grokTargetFromApiKey(xaiKey);
+    case "openrouter":
+      if (!openRouterKey) {
+        return {
+          error:
+            "GITREVERSE_QUICK_LLM=openrouter requires OPENROUTER_API_KEY in .env.local.",
+        };
+      }
+      return openRouterTargetFromApiKey(openRouterKey);
+    case "openai":
+      if (!openAiKey) {
+        return {
+          error:
+            "GITREVERSE_QUICK_LLM=openai requires OPENAI_API_KEY in .env.local.",
+        };
+      }
+      return openAiTargetFromApiKey(openAiKey);
+    case "google":
+      if (!googleKey) {
+        return {
+          error:
+            "GITREVERSE_QUICK_LLM=google requires GOOGLE_GENERATIVE_AI_API_KEY in .env.local.",
+        };
+      }
+      return googleTargetFromApiKey(googleKey);
+  }
 }
 
 const inFlight = new Map<string, Promise<{ prompt: string } | NextResponse>>();
@@ -81,11 +190,6 @@ function buildUserMessage(
   ].join("\n");
 }
 
-function cacheTtlHours(): number {
-  const n = Number(process.env.CACHE_TTL_HOURS);
-  return Number.isFinite(n) && n > 0 ? n : 24;
-}
-
 /** Maps to client 429 handling → “Browse the library” (same as GitHub/rate limits). */
 function isExhaustedCreditsOrQuotaMessage(msg: string): boolean {
   const lower = msg.toLowerCase();
@@ -105,6 +209,12 @@ function isExhaustedCreditsOrQuotaMessage(msg: string): boolean {
     lower.includes("quota exceeded") ||
     lower.includes("exceeded your current quota") ||
     lower.includes("billing has not been enabled")
+  ) {
+    return true;
+  }
+  if (
+    lower.includes("insufficient_quota") ||
+    lower.includes("rate_limit_exceeded")
   ) {
     return true;
   }
@@ -187,26 +297,16 @@ export async function POST(request: NextRequest) {
 
   const promise = (async () => {
     const supabase = getSupabase();
-    let stalePrompt: string | null = null;
     if (supabase) {
       try {
-        const ttlHours = cacheTtlHours();
         const { data, error } = await supabase
           .from("prompt_cache")
-          .select("prompt, cached_at")
+          .select("prompt")
           .eq("owner", owner)
           .eq("repo", repo)
           .maybeSingle();
         if (!error && data?.prompt) {
-          if (data.cached_at) {
-            const ageHours =
-              (Date.now() - new Date(data.cached_at).getTime()) / 36e5;
-            if (ageHours < ttlHours) {
-              return { prompt: data.prompt as string };
-            }
-          }
-          // Entry exists but is stale — keep as fallback
-          stalePrompt = data.prompt as string;
+          return { prompt: data.prompt as string };
         }
       } catch {
         // cache miss — continue to GitHub + LLM
@@ -278,10 +378,7 @@ export async function POST(request: NextRequest) {
         }),
       });
     } catch (e) {
-      const label =
-        llm.provider === "openrouter"
-          ? "OpenRouter"
-          : "Google AI Studio";
+      const label = providerDisplayName(llm.provider);
       const message =
         e instanceof Error ? e.message : `${label} request failed`;
       return NextResponse.json(
@@ -294,10 +391,7 @@ export async function POST(request: NextRequest) {
     try {
       data = await res.json();
     } catch {
-      const label =
-        llm.provider === "openrouter"
-          ? "OpenRouter"
-          : "Google AI Studio";
+      const label = providerDisplayName(llm.provider);
       return NextResponse.json(
         { error: `${label} returned invalid JSON.` },
         { status: 502 }
@@ -305,10 +399,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!res.ok) {
-      const label =
-        llm.provider === "openrouter"
-          ? "OpenRouter"
-          : "Google AI Studio";
+      const label = providerDisplayName(llm.provider);
       const msg =
         extractProviderErrorMessage(data) ??
         `${label} error ${res.status}: ${JSON.stringify(data).slice(0, 300)}`;
@@ -319,9 +410,6 @@ export async function POST(request: NextRequest) {
         isExhaustedCreditsOrQuotaMessage(msg);
 
       if (creditsExhausted) {
-        if (stalePrompt) {
-          return { prompt: stalePrompt };
-        }
         return NextResponse.json(
           { error: "Service is currently over capacity. Try again later." },
           { status: 429 }
@@ -336,7 +424,11 @@ export async function POST(request: NextRequest) {
       const authHint =
         llm.provider === "openrouter"
           ? "OpenRouter authentication failed. Check OPENROUTER_API_KEY in .env.local."
-          : "Google AI Studio authentication failed. Check GOOGLE_GENERATIVE_AI_API_KEY in .env.local.";
+          : llm.provider === "grok"
+            ? "xAI Grok authentication failed. Check XAI_API_KEY in .env.local."
+            : llm.provider === "openai"
+              ? "OpenAI authentication failed. Check OPENAI_API_KEY in .env.local."
+              : "Google AI Studio authentication failed. Check GOOGLE_GENERATIVE_AI_API_KEY in .env.local.";
       return NextResponse.json(
         {
           error: isAuth ? authHint : `Generation failed: ${msg}`,
