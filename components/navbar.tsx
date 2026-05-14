@@ -108,7 +108,28 @@ function IconLogOut({ size = 15 }: { size?: number }) {
   );
 }
 
+function IconXCircle({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" />
+      <line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+  );
+}
+
 const SUBSCRIBER_EMAIL_KEY = "gr_subscriber_email";
+const CANCEL_REASON_MIN_LEN = 10;
 
 function userDisplayName(user: User): string {
   const meta = user.user_metadata as Record<string, unknown> | undefined;
@@ -255,7 +276,13 @@ function PremiumButton({ isSubscriber }: { isSubscriber: boolean }) {
 
 export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
   const pathname = usePathname();
-  const { user, isLoading: authLoading, signInWithGitHub, signOut } = useAuth();
+  const {
+    user,
+    session,
+    isLoading: authLoading,
+    signInWithGitHub,
+    signOut,
+  } = useAuth();
   const authUiEnabled =
     Boolean(!AUTH_SKIP && isSupabaseAuthConfigured());
 
@@ -280,6 +307,83 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSuccess, setCancelSuccess] = useState(false);
+
+  const closeCancelModal = useCallback(() => {
+    setCancelOpen(false);
+    setCancelReason("");
+    setCancelError(null);
+    setCancelLoading(false);
+    setCancelSuccess(false);
+  }, []);
+
+  const handleConfirmCancelSubscription = useCallback(async () => {
+    const reason = cancelReason.trim();
+    if (reason.length < CANCEL_REASON_MIN_LEN) {
+      setCancelError(
+        `Please share a bit more detail (at least ${CANCEL_REASON_MIN_LEN} characters).`
+      );
+      return;
+    }
+
+    const token = session?.access_token;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+    if (!token || !url || !anonKey) {
+      setCancelError("Something went wrong. Try signing out and back in.");
+      return;
+    }
+
+    setCancelLoading(true);
+    setCancelError(null);
+
+    try {
+      const res = await fetch(`${url}/functions/v1/cancel-subscription`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: anonKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ cancellation_reason: reason }),
+      });
+
+      const data: unknown = await res.json().catch(() => ({}));
+      const errMsg =
+        typeof data === "object" &&
+        data !== null &&
+        "error" in data &&
+        typeof (data as { error: unknown }).error === "string"
+          ? (data as { error: string }).error
+          : null;
+
+      if (!res.ok) {
+        setCancelError(errMsg || "Could not cancel subscription.");
+        setCancelLoading(false);
+        return;
+      }
+
+      try {
+        localStorage.removeItem(SUBSCRIBER_EMAIL_KEY);
+      } catch {
+        /* ignore */
+      }
+      setSubscriberFromStorage(false);
+      setCancelSuccess(true);
+      setCancelLoading(false);
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch {
+      setCancelError("Network error. Please try again.");
+      setCancelLoading(false);
+    }
+  }, [cancelReason, session?.access_token]);
+
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!menuRef.current?.contains(e.target as Node)) {
@@ -291,6 +395,15 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
       return () => document.removeEventListener("mousedown", onDoc);
     }
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!cancelOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeCancelModal();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [cancelOpen, closeCancelModal]);
 
   const busySignInRef = useRef(false);
   const handleSignIn = useCallback(async () => {
@@ -306,9 +419,12 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
   }, [signInWithGitHub]);
 
   const menuId = useId();
+  const cancelDialogTitleId = useId();
+  const cancelDialogDescId = useId();
 
   return (
-    <nav className="sticky top-0 z-50 border-b-[3px] border-zinc-900 bg-[#FFFDF8]">
+    <>
+      <nav className="sticky top-0 z-50 border-b-[3px] border-zinc-900 bg-[#FFFDF8]">
       <div className="mx-auto flex h-16 max-w-4xl items-center justify-between gap-3 px-4 sm:px-6">
         <Link
           href="/"
@@ -392,6 +508,23 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
                           </span>
                         ) : null}
                       </div>
+                      {isSubscriber ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2.5 border-b-2 border-zinc-200 px-4 py-3 text-left text-sm font-semibold text-[#d31611] hover:bg-zinc-50"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setCancelOpen(true);
+                            setCancelReason("");
+                            setCancelError(null);
+                            setCancelSuccess(false);
+                          }}
+                        >
+                          <IconXCircle />
+                          Cancel subscription
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         role="menuitem"
@@ -426,5 +559,108 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
         </div>
       </div>
     </nav>
+    {cancelOpen ? (
+      <div
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-zinc-900/40 px-4 py-8"
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !cancelLoading && !cancelSuccess)
+            closeCancelModal();
+        }}
+      >
+        <div
+          className="relative max-h-[min(90vh,520px)] w-full max-w-md overflow-hidden rounded-[10px] border-[3px] border-zinc-900 bg-[#FFFDF8]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={cancelDialogTitleId}
+          aria-describedby={cancelDialogDescId}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div
+            className="pointer-events-none absolute inset-0 rounded-[10px] bg-zinc-900"
+            style={{ transform: "translate(5px,5px)" }}
+            aria-hidden
+          />
+          <div className="relative max-h-[inherit] overflow-y-auto rounded-[10px] bg-[#FFFDF8]">
+            <div className="border-b-2 border-zinc-200 bg-[#fff4da] px-4 py-3.5">
+              <h2
+                id={cancelDialogTitleId}
+                className="text-sm font-extrabold tracking-tight text-zinc-900"
+              >
+                Cancel subscription
+              </h2>
+              <p
+                id={cancelDialogDescId}
+                className="mt-1 text-xs leading-relaxed text-zinc-500"
+              >
+                Tell us why you&apos;re leaving — your feedback helps us improve.
+              </p>
+            </div>
+
+            <div className="p-4">
+              {cancelSuccess ? (
+                <p className="text-sm font-semibold text-zinc-900">
+                  Subscription cancelled. Refreshing…
+                </p>
+              ) : (
+                <>
+                  <label
+                    htmlFor="cancel-reason"
+                    className="mb-1.5 block text-xs font-bold text-zinc-700"
+                  >
+                    Cancellation reason
+                  </label>
+                  <textarea
+                    id="cancel-reason"
+                    value={cancelReason}
+                    onChange={(e) => {
+                      setCancelReason(e.target.value);
+                      if (cancelError) setCancelError(null);
+                    }}
+                    disabled={cancelLoading}
+                    rows={4}
+                    className="block w-full resize-y rounded-md border-[2.5px] border-zinc-900 bg-white px-3 py-2 text-sm text-zinc-900 shadow-none outline-none ring-0 placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:opacity-60"
+                    placeholder="e.g. Not using it enough, switching tools, too expensive…"
+                  />
+                  <p className="mt-1.5 text-[11px] text-zinc-500">
+                    At least {CANCEL_REASON_MIN_LEN} characters required.
+                  </p>
+                  {cancelError ? (
+                    <p
+                      className="mt-2 text-xs font-semibold text-[#d31611]"
+                      role="alert"
+                    >
+                      {cancelError}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </div>
+
+            {!cancelSuccess ? (
+              <div className="flex flex-col-reverse gap-2 border-t-2 border-zinc-200 bg-[#fffdf8] p-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  className="rounded-md border-[2.5px] border-zinc-900 bg-white px-3 py-2 text-sm font-bold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={cancelLoading}
+                  onClick={closeCancelModal}
+                >
+                  Keep my subscription
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border-[2.5px] border-zinc-900 bg-[#d31611] px-3 py-2 text-sm font-bold text-white hover:opacity-95 disabled:opacity-50"
+                  disabled={cancelLoading}
+                  onClick={() => void handleConfirmCancelSubscription()}
+                >
+                  {cancelLoading ? "Cancelling…" : "Cancel subscription"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
