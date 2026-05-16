@@ -331,9 +331,7 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
     }
 
     const token = session?.access_token;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-    if (!token || !url || !anonKey) {
+    if (!token) {
       setCancelError("Something went wrong. Try signing out and back in.");
       return;
     }
@@ -342,24 +340,23 @@ export function Navbar({ isSubscriber: isSubscriberProp }: NavbarProps) {
     setCancelError(null);
 
     try {
-      const res = await fetch(`${url}/functions/v1/cancel-subscription`, {
+      const res = await fetch("/api/cancel-subscription", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          apikey: anonKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ cancellation_reason: reason }),
       });
 
       const data: unknown = await res.json().catch(() => ({}));
-      const errMsg =
-        typeof data === "object" &&
-        data !== null &&
-        "error" in data &&
-        typeof (data as { error: unknown }).error === "string"
-          ? (data as { error: string }).error
-          : null;
+      const errMsg = ((): string | null => {
+        if (typeof data !== "object" || data === null) return null;
+        const o = data as Record<string, unknown>;
+        if (typeof o.error === "string" && o.error.trim()) return o.error;
+        if (typeof o.message === "string" && o.message.trim()) return o.message;
+        return null;
+      })();
 
       if (!res.ok) {
         setCancelError(errMsg || "Could not cancel subscription.");
