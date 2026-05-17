@@ -118,9 +118,6 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 {error}
               </p>
             ) : null}
-            <p className="text-center text-xs text-zinc-500">
-              Powered by Supabase Auth — your repo URL stays on this page.
-            </p>
           </div>
         </div>
       </div>
