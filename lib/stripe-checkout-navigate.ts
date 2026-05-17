@@ -10,13 +10,20 @@ export const PAYMENT_LINK =
     process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK?.trim()) ||
   "";
 
-function savePendingRedirect(): void {
+export function saveReturnPath(): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(PENDING_REDIRECT_KEY, window.location.pathname);
+    if (!localStorage.getItem(PENDING_REDIRECT_KEY)) {
+      localStorage.setItem(PENDING_REDIRECT_KEY, window.location.pathname);
+    }
   } catch {
     /* storage unavailable */
   }
+}
+
+function savePendingRedirect(): void {
+  // Only saves if nothing was pre-saved (e.g. from a "Get Unlimited" click)
+  saveReturnPath();
 }
 
 export async function beginStripeCheckout(): Promise<void> {
